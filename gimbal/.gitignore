@@ -1,0 +1,6 @@
+build/
+*.o
+*.log
+.vscode/
+.DS_Store
+*.bak-*
