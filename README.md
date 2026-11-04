@@ -28,7 +28,7 @@
 cd ctl
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
-./build/gimbal_ctl --host 192.168.2.2
+./build/gimbal_ctl --host 10.42.0.1
 ```
 
 依赖 X11 + libjpeg（`libx11-dev`、`libjpeg-dev`）。线协议直接复用 `../gimbal` 的 `control_link.hpp`，**只有一个源头不复制**——本仓库里两个目录正好是兄弟关系，默认的 `GIMBAL_ROOT=../gimbal` 直接可用。
