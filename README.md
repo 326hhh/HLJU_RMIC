@@ -6,9 +6,8 @@
 
 ```
 笔记本 ctl ──UDP 40001──► Jetson gimbal ──40pin UART 115200──► STM32F401 fire ──► 水弹波箱
-   (X11)                     │  │──USART2 或 CAN0──► STM32F407 chassis（麦轮 + IMU）
-                             │  └──UART 115200 / SocketCAN──► ZDT X42S 云台步进 ×2
-                             └──mjpeg_server :8080（图传回笔记本）
+   (X11)                     │  │── CAN0──► STM32F407 chassis（麦轮 + IMU） 和 ZDT X42S 云台步进 ×2
+                             └──mjpeg_server :8080（图传回笔记本）（未完成）
 ```
 
 ## 模块一览
