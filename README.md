@@ -24,23 +24,39 @@
 ### PC 客户端 `ctl/`
 
 ```bash
-cd ctl
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j4
-./build/gimbal_ctl --host 10.42.0.1
+cd ~/gimbal_ctl && ./build/gimbal_ctl --host 10.42.0.1      # 无线
+# 或 ./build/gimbal_ctl --host 192.168.2.2                   # 有线
 ```
 
 依赖 X11 + libjpeg（`libx11-dev`、`libjpeg-dev`）。线协议直接复用 `../gimbal` 的 `control_link.hpp`，**只有一个源头不复制**——本仓库里两个目录正好是兄弟关系，默认的 `GIMBAL_ROOT=../gimbal` 直接可用。
 
 ### Jetson 上位机 `gimbal/`
 
+####  Jetson 侧起 AP
+
+```bash
+# 注意：car-ap 是 autoconnect=no，需要手动拉起
+sudo nmcli con up car-ap
+# 验证（关键！见 §8.1 假活问题）
+cat /proc/net/dev | grep wlan0; sleep 3; cat /proc/net/dev | grep wlan0
+```
+
+####  Jetson Can 挂载
+
+```bash
+sudo slcand -o -s8 -t hw /dev/ttyACM1 can0 && sudo ip link set can0 up   # 编号以 ls /dev/ttyACM* 为准
+candump -td can0      # 应看到 0x110~0x114 每 10ms 一组、组内连续
+cansend can0 021#01   # EN 开；随后 020 速度才生效
+cansend can0 000#     # 广播急停（DLC=0 也认）
+```
+
+####  Jetson 运行
+
 ```bash
 cd gimbal
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
-./build/gimbal --device /dev/ttyUSB0          # 全串口：底盘 + 云台共用一个 CH340
-./build/gimbal --chassis can0                  # 混合：云台串口 + 底盘 CAN
-./build/gimbal --selftest                      # 不接硬件的 9 段自检
+./build/gimbal --device can0   # 全 CAN：两轴 ZDT 扩展帧 + 底盘标准帧同一条 can0
 ```
 
 ### 底盘固件 `chassis/`
