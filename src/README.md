@@ -5,7 +5,8 @@
 | `main.cpp` | **27RM** | 自瞄主程序：采帧 → 检测 → PnP → 平滑 → 打印/可视化 |
 | `camera_usb.cpp` | 公共库 | V4L2 直采（mmap）+ 解码 + 控制项 |
 | `camera_calib.cpp` | 公共库 | 标定加载/去畸变/PnP/装甲板尺寸读取 |
-| `light_bar.cpp` | 公共库 | 灯条检测器实现 |
+| `light_bar.cpp` | 公共库 | 灯条检测器实现（`detectAll` 支持同帧多板） |
+| `target_tracker.cpp` | 27RM | 反小陀螺：4 板环目标跟踪 + 预测 |
 | `capture_calib.cpp` | capture_calib | 棋盘格采集（GUI / `--headless` 自动存图；经典检测器 + 60ms 限速 + 窗口 fps 显示） |
 | `calibrate.cpp` | calibrate | 标定计算（读 `calib_images/` → `configs/camera.yaml`；自动剔除坏图 + 覆盖度报告；支持 png/jpg） |
 | `detect_test.cpp` | detect_test | 检测验证：实时/静态图/`--selftest` 合成自检 |
@@ -18,17 +19,21 @@
 
 ```
 加载 camera.yaml（缺失则报错退出，必须标定）
-加载 light_bar.yaml / armor.yaml / camera_runtime.yaml
+加载 light_bar.yaml / armor.yaml / camera_runtime.yaml / target.yaml
 UsbCamera.Open（控制项在取流前应用）
 循环：
   GetLatestFrame → 同一帧不重复处理
-  det.detect() → solvePose() → PoseFilter.Update()
-  10 Hz 打印 / ~25 Hz 可视化（避免 imshow 拖慢采集）
+  det.detectAll()（可能 0/1/2 块板）
+  每块 solvePose() → 喂 TargetTracker（反小陀螺更新）
+  PoseFilter.Update()（单板平滑）
+  TargetTracker.SelectAimPlate(t + 前瞻)（预测瞄准角）
+  10 Hz 打印（单板行 + [反小陀螺] 行）/ ~25 Hz 可视化（含预测环）
   按键：q 退出 / c 切颜色 / r 重载灯条参数 / s 截图
+  0.8 秒无观测 → TargetTracker.Reset()
 ```
 
-另外三种模式：`--bench`（纯测采集帧率，2 秒无帧保护）、`--save-frame`
-（抓一帧存 PNG）、`--frames N`（跑 N 帧退出）。
+另外四种模式：`--bench`（纯测采集帧率，2 秒无帧保护）、`--track-test`
+（反小陀螺合成自检）、`--save-frame`（抓一帧存 PNG）、`--frames N`（跑 N 帧退出）。
 
 ## 检测器（light_bar.cpp）
 

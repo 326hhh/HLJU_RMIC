@@ -302,11 +302,9 @@ bool LightBarDetector::correctBar(const cv::Mat& gray, LightBar& bar) {
 // ------------------------------------------------------------------
 // 灯条配对 → 装甲板
 // ------------------------------------------------------------------
-std::optional<ArmorTarget> LightBarDetector::pairBars(
+std::vector<ArmorTarget> LightBarDetector::pairAllBars(
     std::vector<LightBar>& bars) {
-  ArmorTarget best;
-  bool found = false;
-  double best_score = 0.0;
+  std::vector<ArmorTarget> found_targets;
 
   const int n = static_cast<int>(bars.size());
   for (int i = 0; i < n; ++i) {
@@ -347,25 +345,31 @@ std::optional<ArmorTarget> LightBarDetector::pairBars(
       if (cfg_.use_pca && cfg_.pca_required && !(l.pca_ok && r.pca_ok))
         continue;
 
-      const double score =
-          static_cast<double>(avg_len) - std::fabs(l.center.y - r.center.y);
-      if (!found || score > best_score) {
-        found = true;
-        best_score = score;
-        best.left_light = l;
-        best.right_light = r;
-        best.center = (l.center + r.center) * 0.5f;
-        // 角点顺序：板左下 → 板左上 → 板右上 → 板右下
-        // ⚠️ 镜像：板子朝向相机时，板的左条出现在画面右侧，
-        //    所以「板左下」= 画面右条的底端（r = 画面右条）
-        best.corners = {r.bottom, r.top, l.top, l.bottom};
-      }
+      ArmorTarget target;
+      target.left_light = l;
+      target.right_light = r;
+      target.center = (l.center + r.center) * 0.5f;
+      // 角点顺序：板左下 → 板左上 → 板右上 → 板右下
+      // ⚠️ 镜像：板子朝向相机时，板的左条出现在画面右侧，
+      //    所以「板左下」= 画面右条的底端（r = 画面右条）
+      target.corners = {r.bottom, r.top, l.top, l.bottom};
+      found_targets.push_back(target);
     }
   }
-  if (!found) {
-    return std::nullopt;
-  }
-  return best;
+  // 按灯条平均长度从大到小排序（越大 = 越近/越可靠）
+  std::sort(found_targets.begin(), found_targets.end(),
+            [](const ArmorTarget& a, const ArmorTarget& b) {
+              return cv::norm(a.left_light.top - a.left_light.bottom) >
+                     cv::norm(b.left_light.top - b.left_light.bottom);
+            });
+  return found_targets;
+}
+
+std::optional<ArmorTarget> LightBarDetector::pairBars(
+    std::vector<LightBar>& bars) {
+  const auto targets = pairAllBars(bars);
+  if (targets.empty()) return std::nullopt;
+  return targets.front();
 }
 
 // ------------------------------------------------------------------
@@ -384,6 +388,21 @@ std::optional<ArmorTarget> LightBarDetector::detect(const cv::Mat& bgr) {
     }
   }
   return pairBars(bars_);
+}
+
+std::vector<ArmorTarget> LightBarDetector::detectAll(const cv::Mat& bgr) {
+  if (bgr.empty()) {
+    return {};
+  }
+  bars_ = findBars(bgr);
+  if (cfg_.use_pca) {
+    cv::Mat gray;
+    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    for (auto& b : bars_) {
+      correctBar(gray, b);
+    }
+  }
+  return pairAllBars(bars_);
 }
 
 // ------------------------------------------------------------------

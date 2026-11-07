@@ -6,6 +6,7 @@
 | `camera_calib.hpp` | 标定数据（内参/畸变）加载、逐帧去畸变、装甲板 PnP 位姿解算 |
 | `light_bar.hpp` | 灯条检测器：HSV 掩膜 → 轮廓 → 灯条 → PCA 精修 → 配对 → 装甲板角点 |
 | `aim_filter.hpp` | 位姿平滑（EMA）+ 跳变门限 + 单目标状态机（锁定/确认中/丢失） |
+| `target_tracker.hpp` | 反小陀螺：4 板环模型目标跟踪（中心/半径/相位/转速 + 预测） |
 
 > 约定：所有类/结构都在全局命名空间（检测器在 `rm27::`），单位统一为 **mm / 弧度 / 像素**，
 > 坐标系为 OpenCV 相机系（x 右、y 下、z 前）。
@@ -80,3 +81,18 @@ if (out.valid) { /* out.distance_m / out.yaw_deg / out.pitch_deg / out.plate_til
   重置平滑（应对换目标/误检）
 - **状态机**：连续命中 `acquire_hits` 帧才 `valid`；连续丢失 `max_lost` 帧后清状态
 - `plate_tilt_deg`：用原始 rvec 算板面法线与视线夹角（0°=正对相机）
+
+## target_tracker.hpp
+
+```cpp
+rm27::TargetTracker tracker("configs/target.yaml");
+tracker.Update({pose.tvec, PoseNormal(pose.rvec)}, t);   // 每块检测到的板一次
+auto plates = tracker.Predict(t + 0.04);                 // 预测整圈 4 块板位置
+rm27::PredictedPlate aim;
+tracker.SelectAimPlate(t + 0.04, &aim);                  // 选朝向相机的板
+```
+
+- 观测：板中心 + 板面法线（相机系，mm）；法线指向板外侧（远离机器人中心）
+- 模型：4 板水平环，中心 `c = p - R·n`，相位/转速由板角度序列估计
+- 中心/速度用 6 维卡尔曼，相位/转速用 2 维卡尔曼（相位残差 π 回绕）
+- `--track-test` 合成自检验证跟踪与预测精度

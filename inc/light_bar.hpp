@@ -104,6 +104,13 @@ class LightBarDetector {
    */
   std::optional<ArmorTarget> detect(const cv::Mat& bgr);
 
+  /**
+   * 检测一帧，返回所有通过门限的装甲板（用于反小陀螺：同帧可能看到 1~2 块）。
+   * @param bgr 原始帧（BGR）
+   * @return 空的 vector 表示没找到
+   */
+  std::vector<ArmorTarget> detectAll(const cv::Mat& bgr);
+
   const LightBarConfig& config() const { return cfg_; }
   const std::vector<LightBar>& bars() const { return bars_; }
   const cv::Mat& mask() const { return mask_debug_; }
@@ -118,6 +125,7 @@ class LightBarDetector {
  private:
   std::vector<LightBar> findBars(const cv::Mat& bgr);
   std::optional<ArmorTarget> pairBars(std::vector<LightBar>& bars);
+  std::vector<ArmorTarget> pairAllBars(std::vector<LightBar>& bars);
 
   /** 从轮廓构造灯条（借鉴 jlu types.cpp LightBar(contour)） */
   static LightBar fromContour(const std::vector<cv::Point>& contour);
