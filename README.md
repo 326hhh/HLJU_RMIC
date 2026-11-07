@@ -2,7 +2,7 @@
 
 黑龙江大学 2026 校内赛 RMIC 麦轮小车（云台 + 底盘 + 水弹波箱）的完整工程代码。
 
-一架车的控制链路拆成四个模块：**PC 客户端控制 → Jetson 上位机 → 底盘固件 / 火控固件 / 云台步进电机**。
+一架车的控制链路拆成五个模块：**PC 客户端控制 → Jetson 上位机 → 底盘固件 / 火控固件 / 云台步进电机 / 视觉自瞄**。
 
 ```
 笔记本 ctl ──UDP 40001──► Jetson gimbal ──40pin UART 115200──► STM32F401 fire ──► 水弹波箱
@@ -18,6 +18,7 @@
 | `gimbal/` | Jetson 上位机：两轴云台控制、底盘链路（UART + CAN 双后端）、图传服务 | Jetson Nano | C++17 / CMake | [gimbal/README.md](gimbal/README.md) |
 | `chassis/` | 底盘固件：麦轮正逆解 + 四轮速度环 + IMU 陀螺外环 | STM32F407VGTx | C / CMake | [chassis/README.md](chassis/README.md) |
 | `fire/` | 火控固件：水弹波箱开火，三层安全保护 | STM32F401RCT6 | C / CMake | [fire/README.md](fire/README.md) |
+| `autoaim/` | 视觉自瞄：灯条检测 → 装甲板 PnP 位姿 → 平滑滤波（只识别定位，不控云台） | Jetson Nano | C++17 / CMake + OpenCV | [autoaim/README.md](autoaim/README.md) |
 
 ## 快速开始
 
@@ -79,6 +80,18 @@ openocd -f interface/cmsis-dap.cfg -f target/stm32f4x.cfg \
         -c "program build/Debug/biu.elf verify reset exit"
 ```
 
+### 视觉自瞄 `autoaim/`
+
+```bash
+cd autoaim
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRM27_USE_PKGCONFIG=ON   # Jetson 上绕开 OpenCV+CUDA
+cmake --build build -j4
+./build/pose_test   --selftest    # 合成自检：4 角点 → 距离/yaw/pitch
+./build/detect_test --selftest    # 合成自检：灯条检测链路
+```
+
+USB 摄像头 800×600 MJPG，输出相机系下的距离 / yaw / pitch / 板面偏角，供上层自瞄/云台使用。
+
 ## 硬件一览
 
 | 部件 | 型号 / 说明 |
@@ -99,12 +112,13 @@ openocd -f interface/cmsis-dap.cfg -f target/stm32f4x.cfg \
 - **gimbal**：云台 ZDT 协议、底盘 UART/CAN 双后端、UDP v2 线协议、9 段自检，可用；云台双轴联调进行中。
 - **chassis**：速度环 PID 调完、IMU 陀螺外环接入、USART2 + CAN1 双链路定型（v0.6）。
 - **fire**：开火链路 USART2 + PA12 低电平驱动，看门狗/超时保护验证通过。
+- **autoaim**：800×600 相机标定完成（RMS 0.409px），灯条检测 + 小装甲板 PnP 位姿链路自检通过；未接云台控制。
 
 各模块的详细设计、踩坑记录与联调数据都在对应 README 及其 `docs/` 里，这里不重复。
 
 ## 关于本仓库
 
-2026-11 由四个独立仓库合并而成（`HLJU_RMIC_gimbal` / `HLJU_RMIC_chassis` / `HLJU_RMIC_ctl` / `HLJU_RMIC_fire`），
+2026-11 由五个独立仓库合并而成（`HLJU_RMIC_gimbal` / `HLJU_RMIC_chassis` / `HLJU_RMIC_ctl` / `HLJU_RMIC_fire` / `HLJU_RMIC_autoaim`），
 合并时**每个模块的完整提交历史都保留了**，按子目录就能单独查：
 
 ```bash
@@ -112,4 +126,4 @@ git log --oneline -- gimbal/     # 云台上位机的全部历史
 git log --oneline -- chassis/    # 底盘固件的全部历史
 ```
 
-日常开发在对应子目录里改、`git add <子目录>/`、一起提交即可；四个模块也可以各自独立构建、互不干扰。
+日常开发在对应子目录里改、`git add <子目录>/`、一起提交即可；五个模块也可以各自独立构建、互不干扰。
