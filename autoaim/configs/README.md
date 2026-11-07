@@ -6,6 +6,7 @@
 | `camera_runtime.yaml` | 手工维护（相机参数） | 27RM / detect_test / pose_test / capture_calib* |
 | `light_bar.yaml` | 手工维护（检测参数） | 27RM / detect_test |
 | `armor.yaml` | 手工维护（装甲板尺寸） | 27RM / detect_test / pose_test |
+| `target.yaml` | 手工维护（反小陀螺参数） | 27RM |
 
 > 程序默认在工程根目录运行，以下路径均为相对路径，可命令行覆盖。
 
@@ -86,3 +87,18 @@
 | `bar_width_mm` | 5.85 | 灯条宽度（检测门限/合成自检图用） |
 
 > 校内赛只有小装甲板，无大小分类；换板子只需改这里。
+
+## target.yaml（反小陀螺）
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `radius_mm` | 150.0 | 机器人中心到板面中心的水平距离（**实测！卷尺量**） |
+| `armor_num` | 4 | 装甲板数量 |
+| `predict_time_s` | 0.04 | 预测前瞻（补偿处理/击发延迟） |
+| `max_spin_rate_dps` | 900 | 最大转速（°/s，钳制用；小陀螺常见 300~700°/s） |
+| `center_accel_std` | 40.0 | 中心平动加速度噪声（mm/s²，越大越跟手） |
+| `phase_accel_std_deg` | 120.0 | 相位角加速度噪声（°/s²） |
+| `center_meas_std_mm` | 12.0 | 中心位置观测噪声（mm） |
+| `phase_meas_std_deg` | 3.0 | 相位观测噪声（°） |
+| `assoc_gate_mm` | 400.0 | 观测与预测板位置关联门限（mm） |
+| `estimate_radius` | 1 | 同帧看到 2 块板时在线估计半径 |
