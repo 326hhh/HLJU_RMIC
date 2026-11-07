@@ -1,0 +1,28 @@
+%YAML:1.0
+---
+# ============================================================
+# 相机运行时参数（27RM 校内赛）
+# 与 configs/camera.yaml（标定）分开存放，本文件手工维护。
+#
+# ⚠️ 比赛必须【手动曝光 + 手动白平衡】：自动曝光/白平衡会让画面亮度
+#    随环境漂移，传统 CV 的 HSV 阈值直接失效。
+#
+# 本相机（0c45:6368 Sonix USB2.0 Camera）V4L2 控制项：
+#   exposure_auto: 0=自动 1=手动
+#   exposure_absolute_100us: 手动曝光时间，单位 100µs（30 = 3ms）
+#   white_balance_auto: 0=手动 1=自动
+#   white_balance_temperature: 色温 K
+#
+# ⚠️ 这台相机的 UVC 控制项提交很不稳定（实测：某些单项设置会直接停流，
+#    且偶发自己掉线重连）。如果取流卡住：拔插摄像头 USB，重新枚举后
+#    恢复。程序里 bench 模式有 2 秒无帧保护会报错退出。
+# ============================================================
+exposure_auto: 1
+exposure_absolute_100us: 30   # 3ms 曝光（99fps 帧周期 10.1ms，别超过它）
+white_balance_auto: 0
+white_balance_temperature: 4600
+brightness: -10
+contrast: 40
+saturation: 80
+gamma: 120
+sharpness: 2

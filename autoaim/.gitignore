@@ -1,0 +1,6 @@
+# 构建产物 / 临时文件
+build/
+calib_images/
+*.jpg
+*.png
+.dsh/

@@ -1,0 +1,51 @@
+%YAML:1.0
+---
+# ============================================================
+# 灯条检测参数（27RM 校内赛 · 小装甲板 灯条 28.05x5.85mm）
+# 敌方颜色：主人是红方 → 打蓝。用自己红板测试时改成 red。
+# 现场调参：detect_test 里按 c 切换颜色、r 重载本文件
+# ============================================================
+enemy_color: "blue"
+
+# ---------- 蓝色 HSV 范围（OpenCV H∈[0,180], S/V∈[0,255]） ----------
+blue_h_min: 100
+blue_h_max: 140
+blue_s_min: 60
+blue_v_min: 60
+
+# ---------- 红色 HSV 范围（H 跨 0 和 180 两端） ----------
+red_h_min_1: 0
+red_h_max_1: 12
+red_h_min_2: 168
+red_h_max_2: 180
+red_s_min: 60
+red_v_min: 60
+
+# ---------- 形态学（闭运算补洞） ----------
+# 灯条小：iters 别开大，远景灯条只有 2~3px 宽，腐蚀两轮会被整个抹掉
+morph_kernel: 3
+morph_iters: 1
+
+# ---------- 灯条筛选 ----------
+min_length: 5.0     # 最小灯条长度（px）。28.05mm 灯条 1.5m 处约 9px
+min_ratio: 1.4      # 长/宽最小比（阈值化会把掩膜撑宽，别设太高）
+max_tilt_deg: 45.0  # 与竖直方向最大夹角
+min_area: 8.0       # 最小灯条轮廓面积（px^2）。小灯条 1.5m 处只有 ~9x2px
+max_area: 200000.0
+
+# ---------- 配对 ----------
+max_angle_diff_deg: 15.0  # 两灯条倾角差上限
+max_len_ratio: 2.0        # 两灯条长度比上限
+max_center_y_ratio: 0.6   # 中心纵向差 / 平均灯条长 上限
+center_dist_ratio_min: 1.2  # 中心距/平均灯条长 下限
+center_dist_ratio_max: 3.2  # 上限（W/L≈2.39，板面偏转会压小）
+
+# ---------- PCA 角点修正（jlu lightbar_corrector 同款参数） ----------
+use_pca: 1                    # 是否启用 PCA 角点修正
+pca_required: 0               # 1=两侧灯条都必须 PCA 成功才配对（小板别开）
+pass_optimize_lightbar_width: 2  # 灯条宽度超过此值才尝试 PCA
+normalize_max_brightness: 25.0
+lightbar_min_mean_brightness: 0.0
+padding_scale: 0.07
+search_start_ratio: 0.4
+search_end_ratio: 0.6
