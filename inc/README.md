@@ -7,6 +7,7 @@
 | `light_bar.hpp` | 灯条检测器：HSV 掩膜 → 轮廓 → 灯条 → PCA 精修 → 配对 → 装甲板角点 |
 | `aim_filter.hpp` | 位姿平滑（EMA）+ 跳变门限 + 单目标状态机（锁定/确认中/丢失） |
 | `target_tracker.hpp` | 反小陀螺：4 板环模型目标跟踪（中心/半径/相位/转速 + 预测） |
+| `mjpeg_stream.hpp` | 图传：内嵌 MJPEG-over-HTTP 服务器（30fps，零转码转发） |
 
 > 约定：所有类/结构都在全局命名空间（检测器在 `rm27::`），单位统一为 **mm / 弧度 / 像素**，
 > 坐标系为 OpenCV 相机系（x 右、y 下、z 前）。
@@ -96,3 +97,15 @@ tracker.SelectAimPlate(t + 0.04, &aim);                  // 选朝向相机的�
 - 模型：4 板水平环，中心 `c = p - R·n`，相位/转速由板角度序列估计
 - 中心/速度用 6 维卡尔曼，相位/转速用 2 维卡尔曼（相位残差 π 回绕）
 - `--track-test` 合成自检验证跟踪与预测精度
+
+## mjpeg_stream.hpp
+
+```cpp
+rm27::MjpegStreamer streamer(8080, 30);
+streamer.Start();                          // http://<ip>:8080/stream
+streamer.PublishJpeg(raw_jpeg_bytes);      // 只保留最新帧，客户端自动限速 30fps
+```
+
+- 控制端（gimbal_ctl / 浏览器）直接拉 MJPEG，无需转码
+- `PublishJpeg` 拷贝最新帧并唤醒客户端；每客户端独立线程、独立限速
+- 端口被占用时 `Start()` 返回 false（不影响主程序）

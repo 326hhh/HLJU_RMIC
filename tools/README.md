@@ -12,6 +12,31 @@
 
 > 软复位救不回来时：**物理拔插摄像头，断电 10 秒再插回**（实测唯一可靠的复位方式）。
 
+## aim_udp_listen.py —— 自瞄 UDP 数据接收调试
+
+```bash
+python3 tools/aim_udp_listen.py          # 监听 0.0.0.0:40002
+python3 tools/aim_udp_listen.py 40002    # 指定端口
+```
+
+27RM 默认以 50Hz 广播 `192.168.2.255:40002`（48 字节报文，格式见 README
+「自瞄输出」）。收到后打印 seq/valid/瞄准角/距离/转速/中心/丢包，供控制端验证链路。
+
+## start_all.sh —— 一键启动「控制 + 图传 + 自瞄」
+
+```bash
+./tools/start_all.sh                     # gimbal 守护进程 + 27RM（自瞄+图传 8080）
+./tools/start_all.sh --chassis can0      # 混合后端：云台串口 + 底盘 CAN
+./tools/start_all.sh --gimbal-args "--can can0"   # 全 CAN（CH340 没插时用）
+./tools/start_all.sh --no-gimbal         # 只起 27RM（不接硬件）
+./tools/start_all.sh --27rm-args "--stream-fps 15"   # 给 27RM 追加参数
+./tools/start_all.sh --stop              # 全部停止
+```
+
+- 后台启动，日志 `/tmp/gimbal.log`、`/tmp/27rm.log`
+- 无 `DISPLAY` 时自动给 27RM 加 `--no-gui`
+- 启动前只清理「本次要启动的」进程（`--no-gimbal` 不会动已运行的 gimbal 守护进程）
+
 ## make_chessboard.py —— 棋盘格 PDF 生成器
 
 纯 Python 标准库实现（无第三方依赖），直接写 PDF，保证 A4 毫米尺寸精确。

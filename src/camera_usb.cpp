@@ -279,6 +279,10 @@ void UsbCamera::CaptureLoop() {
       latest_ = frame;  // 丢旧保新：下游只拿最新
       latest_ts_ = now;
       ++latest_seq_;
+      // 图传零转码：保留原始 MJPEG 字节
+      if (is_mjpg_ && raw_jpeg_enabled_.load() && bytes > 4) {
+        latest_jpeg_.assign(data, data + bytes);
+      }
     }
     Xioctl(fd_, VIDIOC_QBUF, &buf);
 
@@ -325,6 +329,14 @@ void UsbCamera::Close() {
     ::close(fd_);
     fd_ = -1;
   }
+}
+
+bool UsbCamera::GetLatestRawJpeg(std::vector<uint8_t>* jpeg, uint64_t* seq) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (latest_jpeg_.empty()) return false;
+  if (jpeg) *jpeg = latest_jpeg_;
+  if (seq) *seq = latest_seq_;
+  return true;
 }
 
 bool UsbCamera::GetLatestFrame(cv::Mat* frame,

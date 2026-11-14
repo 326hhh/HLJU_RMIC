@@ -7,6 +7,7 @@
 | `camera_calib.cpp` | 公共库 | 标定加载/去畸变/PnP/装甲板尺寸读取 |
 | `light_bar.cpp` | 公共库 | 灯条检测器实现（`detectAll` 支持同帧多板） |
 | `target_tracker.cpp` | 27RM | 反小陀螺：4 板环目标跟踪 + 预测 |
+| `mjpeg_stream.cpp` | 27RM | 图传：内嵌 MJPEG-over-HTTP 服务器（零转码转发） |
 | `capture_calib.cpp` | capture_calib | 棋盘格采集（GUI / `--headless` 自动存图；经典检测器 + 60ms 限速 + 窗口 fps 显示） |
 | `calibrate.cpp` | calibrate | 标定计算（读 `calib_images/` → `configs/camera.yaml`；自动剔除坏图 + 覆盖度报告；支持 png/jpg） |
 | `detect_test.cpp` | detect_test | 检测验证：实时/静态图/`--selftest` 合成自检 |
@@ -24,9 +25,12 @@ UsbCamera.Open（控制项在取流前应用）
 循环：
   GetLatestFrame → 同一帧不重复处理
   det.detectAll()（可能 0/1/2 块板）
-  每块 solvePose() → 喂 TargetTracker（反小陀螺更新）
+  每块 solvePose() → 选最近板（单板模式直接锁它）
+  反小陀螺模式才喂 TargetTracker（4 板环更新）
   PoseFilter.Update()（单板平滑）
-  TargetTracker.SelectAimPlate(t + 前瞻)（预测瞄准角）
+  反小陀螺模式：TargetTracker.SelectAimPlate(t + 前瞻)（预测瞄准角）
+  单板模式：直接用最近板的 PnP 角（按 u 切换）
+  图传：MJPG 原始字节 → MjpegStreamer.PublishJpeg（30fps 限速）
   10 Hz 打印（单板行 + [反小陀螺] 行）/ ~25 Hz 可视化（含预测环）
   按键：q 退出 / c 切颜色 / r 重载灯条参数 / s 截图
   0.8 秒无观测 → TargetTracker.Reset()

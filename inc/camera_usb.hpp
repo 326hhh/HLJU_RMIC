@@ -80,6 +80,11 @@ class UsbCamera {
   /** 打开前强制采集格式："mjpg" / "yuyv"（空=默认 MJPG 优先） */
   void SetFormat(const std::string& fmt);
 
+  /** 是否保留最近一帧的原始 MJPEG 字节（图传零转码用，MJPG 模式才有效） */
+  void EnableRawJpeg(bool on) { raw_jpeg_enabled_ = on; }
+  /** 取最近一帧原始 MJPEG 字节；没有时返回 false */
+  bool GetLatestRawJpeg(std::vector<uint8_t>* jpeg, uint64_t* seq = nullptr);
+
   // ---- V4L2 控制项（静态，可对任意 /dev/videoN 使用）----
   static bool SetControl(const std::string& device_path, uint32_t cid,
                          int32_t value);
@@ -118,6 +123,8 @@ class UsbCamera {
   uint64_t latest_seq_ = 0;
 
   std::atomic<double> fps_{0.0};
+  std::atomic<bool> raw_jpeg_enabled_{false};
+  std::vector<uint8_t> latest_jpeg_;
 };
 
 #endif  // RM27_CAMERA_USB_HPP_
