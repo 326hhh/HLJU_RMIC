@@ -215,6 +215,7 @@ void PrintUsage() {
       "  detect_test                         相机实时\n"
       "  detect_test --image 照片.jpg        静态图交互\n"
       "  detect_test --image 照片.jpg --once 跑一次退出（脚本用）\n"
+      "  detect_test --no-gui --frames 200  无头跑 N 帧（1m 卷尺验证用）\n"
       "  detect_test --selftest              合成图自检\n"
       "\n"
       "  其他: --calib 标定文件 | --lightbar 检测参数 | --armor 装甲板尺寸\n"
@@ -236,6 +237,8 @@ int main(int argc, char** argv) {
   int height = 600;
   std::string format;  // "mjpg"/"yuyv"/空
   bool once = false, selftest = false;
+  bool no_gui = false;
+  int frames = 0;  // >0：跑这么多帧自动退出
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--image" && i + 1 < argc) {
@@ -256,6 +259,10 @@ int main(int argc, char** argv) {
       format = argv[++i];
     } else if (a == "--once") {
       once = true;
+    } else if (a == "--no-gui") {
+      no_gui = true;
+    } else if (a == "--frames" && i + 1 < argc) {
+      frames = std::atoi(argv[++i]);
     } else if (a == "--selftest") {
       selftest = true;
     } else if (a == "-h" || a == "--help") {
@@ -322,7 +329,7 @@ int main(int argc, char** argv) {
                  cam.Height());
   }
   std::printf("敌方颜色顺序: 蓝(默认) → c 可切红 | q=退出 s=截图 r=重载\n");
-  if (!once) {
+  if (!once && !no_gui) {
     if (std::getenv("DISPLAY") == nullptr) {
       std::fprintf(stderr,
                    "❌ 没有检测到 DISPLAY：无图形环境。\n"
@@ -347,8 +354,14 @@ int main(int argc, char** argv) {
     const double dt_ms =
         (cv::getTickCount() - t0) * 1000.0 / cv::getTickFrequency();
 
+    static auto last_p = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    const bool do_print = std::chrono::duration<double>(
+                              std::chrono::steady_clock::now() - last_p)
+                              .count() >= 0.1;
+    if (do_print) last_p = std::chrono::steady_clock::now();
+
     if (armor) {
-      if (auto pose = calib.solvePose(armor->corners, size)) {
+      if (do_print) if (auto pose = calib.solvePose(armor->corners, size)) {
         double yaw = 0.0, pitch = 0.0;
         CameraCalib::poseToYawPitch(pose->tvec, &yaw, &pitch);
         std::printf(
@@ -358,12 +371,12 @@ int main(int argc, char** argv) {
             pitch * 180.0 / CV_PI, pose->reproj_error_px, dt_ms,
             cam.MeasuredFps());
       }
-    } else {
+    } else if (do_print) {
       std::printf("无目标（灯条候选 %zu）| 检测 %.1fms | 采集 %.0ffps\n",
                   det.bars().size(), dt_ms, cam.MeasuredFps());
     }
 
-    if (!once) {
+    if (!once && !no_gui) {
       cv::Mat view = raw.clone();
       rm27::LightBarDetector::drawDebug(view, det.bars(), armor);
       cv::putText(view, "q=quit s=save c=color r=reload", cv::Point(10, 28),
@@ -390,6 +403,7 @@ int main(int argc, char** argv) {
     if (once) {
       break;
     }
+    if (frames > 0 && frame_idx + 1 >= frames) break;
     ++frame_idx;
   }
   return 0;

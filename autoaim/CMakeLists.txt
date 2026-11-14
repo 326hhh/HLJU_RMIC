@@ -41,7 +41,7 @@ set(RM27_COMMON
   src/light_bar.cpp)
 
 # 自瞄主程序（输出名 27RM）
-add_executable(rm27 src/main.cpp src/target_tracker.cpp ${RM27_COMMON})
+add_executable(rm27 src/main.cpp src/target_tracker.cpp src/mjpeg_stream.cpp src/aim_udp.cpp src/gimbal_cmd.cpp ${RM27_COMMON})
 set_target_properties(rm27 PROPERTIES OUTPUT_NAME 27RM)
 target_link_libraries(rm27 ${RM27_OPENCV_LIBS} pthread)
 
