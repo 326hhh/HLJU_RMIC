@@ -496,7 +496,7 @@ vx_mmps / vy_mmps / wz_mradps / chassis_flags / chk2（14~20 XOR）/ pad
 ## 8.5 pitch 轴整条链路（会话 / 零位 / 限位 / 手感 / IMU / 打滑）
 
 **一句话**：daemon 启动先自检抬 **10°** → 客户端连上再抬 **40°** 并定为 0° → 方向键速率控制（软限位 ±20°）
-→ 客户端结束放下 **40°**（回自检位）→ daemon 退出**放松 pitch 电机**（失能，yaw 保持使能）。
+→ 客户端结束放下 **40°**（回自检位）→ daemon 退出**两轴都失能**。
 
 **0° 一旦建立就固定**：之后每次会话是"回到这个 0°"，而不是再抬 40°——否则零点每轮爬升 +10°，几轮后枪口贴到限位，表现成"向上抬不动、向下能动"。
 
@@ -518,7 +518,9 @@ gimbal_ctl ──UDP 40001──► main.cpp 100Hz ──► PitchSession 状态
 - **启动自检**：daemon 起来先抬 `--startup-lift`（默认 **10°**）并保持；它完成前客户端会话会等（`startup_wait`）；
 - **客户端会话**：同一进程内第一次会话是"抬 `--pitch-rise`（默认 **40°**）并定 0°"；之后每次会话"回到已建立的 0°"（`have_zero_`），零点不再漂；
 - **急停**：`x` 立即停止 + 失能并 **latch**，需按 `g` 关再开（或本地 `en 1`）重新授权；
-- **退出**：Ctrl-C / `q` 先放下（最多 6 s），然后**放松 pitch 电机（失能）**；yaw 保持使能；
+- **退出**：Ctrl-C / `q` 先放下（最多 6 s），然后**两轴都失能**；
+  （2026-11-08 修：以前 yaw 保持使能，但 `hold()` 只是把目标速率置 0，实际速率按 `--yaw-ramp` 收尾，
+  0.3 s 内常没归零就退出 → ZDT 速度模式没有掉线保护，电机就按最后那个低速一直转。失能是终态，一定停。）
 - **重定零**：重启 daemon 后首次会话会重新抬 40° 定零。
 
 ### 8.5.2 零位、软限位与机械行程（三层，机械优先）
@@ -614,6 +616,7 @@ gimbal_ctl 按住 F ──UDP Fire 位(0x80)──► gimbal ──管道 "1\n"/
 | `--pulses` | 3200 | 脉冲 / 电机圈 | `--chassis <serial\|canX>` | serial | 底盘后端 |
 | `--yaw-limit a b` | 关闭 | 给 yaw 启软限位 | `--no-chassis` | off | 不接底盘 |
 | `--pitch-limit a b` | **−20 20** | pitch 软限位 | `--fire-script` | `src/device/fire_worker.py` | 火力 worker 路径 |
+| `--pitch-no-limit` | off | 取消 pitch 软限位（谨慎：无保护，靠机械挡） | | | |
 | `--yaw-rate` | 180 | yaw 最大 °/s | `--fire-pin` | 12 | 火力 GPIO（BOARD 号） |
 | `--pitch-rate` | 120 | pitch 最大 °/s | `--no-fire` | off | 不启动火力进程 |
 | `--selftest` | off | 自检后退出 | `-h` / `--help` | — | 打印用法 |

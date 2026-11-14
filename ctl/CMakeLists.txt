@@ -22,8 +22,25 @@ if(NOT EXISTS "${GIMBAL_ROOT}/include/gimbal/link/control_link.hpp")
                         "请用 -DGIMBAL_ROOT=<路径> 指定 gimbal 工程位置")
 endif()
 
+# 27RM 自瞄报文结构体复用（唯一权威来源，不复制）
+# 默认按顺序找兄弟目录：独立仓库 ../HLJU_RMIC_autoaim → 旧副本 ../stmproject/27RM_AUTO_AIM
+# → monorepo 里的 ../autoaim；都找不到用 -DAIM_ROOT=<路径> 指定
+set(AIM_ROOT "" CACHE PATH "27RM 自瞄工程根目录（复用 inc/aim_udp.hpp）")
+if(NOT AIM_ROOT)
+    foreach(_cand
+            "${CMAKE_CURRENT_SOURCE_DIR}/../HLJU_RMIC_autoaim"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../stmproject/27RM_AUTO_AIM"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../autoaim")
+        if(EXISTS "${_cand}/inc/aim_udp.hpp")
+            set(AIM_ROOT "${_cand}")
+            break()
+        endif()
+    endforeach()
+endif()
+
 add_executable(gimbal_ctl
     src/main.cpp
+    src/aim_view.cpp
     src/mjpeg_view.cpp
 )
 
@@ -31,7 +48,14 @@ target_include_directories(gimbal_ctl PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${GIMBAL_ROOT}/include
 )
-target_link_libraries(gimbal_ctl PRIVATE ${X11_LIBRARIES} ${JPEG_LIBRARIES})
+if(EXISTS "${AIM_ROOT}/inc/aim_udp.hpp")
+    target_include_directories(gimbal_ctl PRIVATE "${AIM_ROOT}/inc")
+    message(STATUS "gimbal_ctl: 自瞄 UDp 报文结构复用 ${AIM_ROOT}/inc/aim_udp.hpp")
+else()
+    message(WARNING "没找到 ${AIM_ROOT}/inc/aim_udp.hpp：自瞄接收会被编译掉"
+                    "（用 -DAIM_ROOT=<路径> 指定）")
+endif()
+target_link_libraries(gimbal_ctl PRIVATE ${X11_LIBRARIES} Xi ${JPEG_LIBRARIES})
 target_include_directories(gimbal_ctl PRIVATE ${JPEG_INCLUDE_DIRS})
 target_link_directories(gimbal_ctl PRIVATE ${JPEG_LIBRARY_DIRS})
 

@@ -90,6 +90,7 @@ struct Options {
     double      yaw_min = -180.0, yaw_max = 180.0,  yaw_rate = 180.0;
     double      pitch_min = -20.0, pitch_max = 20.0, pitch_rate = 120.0;   ///< 软限位：上抬 20° / 下压 20°
     bool        yaw_no_limit = true;     ///< 导电滑环：yaw 无机械限位
+    bool        pitch_no_limit = false;  ///< --pitch-no-limit：pitch 取消软限位（谨慎）
 
     int         acc        = 200;
     uint16_t    ctrl_port  = CTRL_DEFAULT_PORT;
@@ -156,6 +157,7 @@ static void usage(const char* a0) {
         "  --pulses <n>           脉冲/电机圈 = 200×细分 (默认 3200)\n"
         "  --yaw-limit <a> <b>    给 yaw 启用软限位 (默认关闭)\n"
         "  --pitch-limit <a> <b>  pitch 软限位 (默认 -20 20)\n"
+        "  --pitch-no-limit       取消 pitch 软限位（谨慎：没有保护，靠机械自己挡）\n"
         "  --yaw-rate <dps>       yaw 最大角速度 (默认 180)\n"
         "  --pitch-rate <dps>     pitch 最大角速度 (默认 120)\n"
         "  --acc <0-255>          加速度档位 (默认 200)\n"
@@ -1585,6 +1587,7 @@ static int runMain(Options o) {
     gc.yaw.gear_ratio      = o.gear;
     gc.yaw.max_rate_dps    = o.yaw_rate;
     gc.yaw.use_soft_limits = !o.yaw_no_limit;      // 导电滑环：默认无限位
+    gc.pitch.use_soft_limits = !o.pitch_no_limit;  // --pitch-no-limit：pitch 也不限位
     gc.yaw.min_deg         = o.yaw_min;
     gc.yaw.max_deg         = o.yaw_max;
 
@@ -2203,14 +2206,25 @@ static int runMain(Options o) {
         }
     }
     gimbal.hold();
-    // 退出时放松 pitch 电机（失能，轴可自由转动）；yaw 保持使能
+    // 退出时两轴都失能：
+    //   · pitch 放下后放松（轴可自由转动）；
+    //   · yaw 以前是「保持使能」，但 hold() 只把目标速率置 0，实际速率还要按
+    //     --yaw-ramp（默认 600°/s²，末段还有软化）往下走，下面 30 拍（0.3 s）
+    //     经常收不到 0，最后发出去的是个没归零的低速值 —— ZDT 速度模式没有
+    //     掉线保护，进程一退电机就永远按那个低速转下去（2026-11-08 实测踩到）。
+    //     失能是终态，一定停。
     gimbal.pitch().enable(false);
     for (int i = 0; i < 30; ++i) gimbal.step(dt_target);
+    gimbal.yaw().enable(false);
+    for (int i = 0; i < 10; ++i) {   // 让失能帧排出 TX 队列（--tx-gap 默认 8ms）
+        gimbal.step(dt_target);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     if (imu_log_fp) {
         std::fclose(imu_log_fp);
         imu_log_fp = nullptr;
     }
-    std::printf("[main] pitch 电机已放松（失能）；yaw 保持使能\n");
+    std::printf("[main] 两轴电机已失能（yaw 停止 / pitch 放松）\n");
 
     if (chassis) {
         // 发 0.1 s 的停车帧（EN=0），让 F407 平滑停下
@@ -2240,6 +2254,7 @@ int main(int argc, char** argv) {
         else if (a == "--gear")        o.gear = next(o.gear);
         else if (a == "--pitch-gear")  o.pitch_gear = next(o.pitch_gear);
         else if (a == "--pulses")      o.pulses_per_motor_rev = static_cast<uint32_t>(nexti(3200));
+        else if (a == "--pitch-no-limit") { o.pitch_no_limit = true; }
         else if (a == "--yaw-limit")   { o.yaw_min = next(o.yaw_min); o.yaw_max = next(o.yaw_max);
                                          o.yaw_no_limit = false; }
         else if (a == "--pitch-limit") { o.pitch_min = next(o.pitch_min); o.pitch_max = next(o.pitch_max); }

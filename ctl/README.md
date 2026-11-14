@@ -1,6 +1,19 @@
 # gimbal_ctl —— 云台/底盘控制客户端（PC 端）
 
-原生 X11 小程序：**方向键 / WASD 输入 → 换算指令 → UDP 发给 Jetson → 显示遥测 + MJPEG 视频**。
+原生 X11 小程序：**鼠标（主控）/ 方向键 → 换算指令 → UDP 发给 Jetson → 显示遥测 + MJPEG 视频 + 自瞄数据**。
+
+## 2026-11-08 本轮更新（鼠标控云台 / 自瞄 / 左键开火 / 准星 / pitch 保护）
+
+| 变化 | 一句话 |
+|---|---|
+| **鼠标控云台**（主控输入） | 移动鼠标 = 给云台角速度，指针锁在窗口中心（可以一直朝一个方向甩）；方向键保留叠加。`m` 键临时关掉 |
+| **自瞄数据接入** | 收 27RM 的 `UDP 40002`（48 B @ 50 Hz），状态栏显示 valid / 瞄准角 / 距离 / 转速；`t` 键开"辅助"，按 aim 角比例把云台怼过去 |
+| **左键开火** | 按住鼠标左键连发（`F` 保留备用）；三重门控防误触：指针在窗口内 + 窗口有焦点 + 上一拍已有焦点 |
+| **屏幕准星** | 窗口正中十字 + 圆点（黑描边 + 亮绿）；指针锁定时没有光标，靠它瞄 |
+| **pitch 降灵敏 + 软限位** | `--pitch-scale 0.5`（半速）；离 ±20° 限位 5° 内**线性降速**，不再一头撞上服务端硬夹 |
+| **调试参数** | `--mouse-debug` 打印鼠标采样与开火判定；`--mouse-ignore-focus`、`--raw-motion` |
+
+> 本轮 **Jetson 侧没动**（`~/gimbal` 未改；只在 2026-11-08 单独修过"退出后 yaw 电机还转"的退出流程，见 `~/gimbal/src/main.cpp` 注释）。
 
 ## 目录结构
 
@@ -10,8 +23,9 @@ gimbal_ctl/
 ├── README.md        # 本文件：使用说明与目录/文件说明
 ├── LICENSE          # MIT License（Copyright (c) 2026 saki）
 ├── .gitignore       # 忽略 build/、*.o、*.log、.vscode/、.DS_Store
-├── include/         # 公共头文件（mjpeg_view.hpp），见 include/README.md
-├── src/             # 实现源码（main.cpp、mjpeg_view.cpp），见 src/README.md
+├── include/         # 公共头文件（mjpeg_view.hpp、aim_view.hpp），见 include/README.md
+├── src/             # 实现源码（main.cpp、mjpeg_view.cpp、aim_view.cpp），见 src/README.md
+├── win/             # Windows 原生客户端 + 交叉编译脚本 + ini，见 win/README.md
 └── build/           # CMake 构建输出目录（自动生成，已 gitignore，可删）
 ```
 
@@ -44,7 +58,7 @@ gimbal 工程不在 `../gimbal` 时用 `-DGIMBAL_ROOT=<路径>`。
 ## Windows 版（`win/`）
 
 同一套控制逻辑的 **Windows 原生客户端**（静态链接 exe，拷过去双击就能跑，无需装运行库），
-源码在 `win/`，使用说明见 [`win/readme.txt`](win/readme.txt)。
+源码在 `win/`。**完整说明见 [`win/README.md`](win/README.md)**，给队友的分发说明书是 `win/readme.txt`。
 
 ```bash
 # 在 Linux 上交叉编译（默认用 zig，找不到则用 mingw-w64 g++）
@@ -55,69 +69,84 @@ GIMBAL_ROOT=~/gimbal ./build_win.sh
 
 - 配置：`win/gimbal_ctl.ini`（host / 速度 / 平滑 / 小陀螺速率等，都有中文注释）；
 - 启动：双击 `start.cmd`（或 `gimbal_ctl.exe --selftest` 先自检）；
-- 键位与 Linux 版一致（云台方向键、WASD、Shift 快速档、R 小陀螺、F 发射）。
+- 键位**不完全一致**：Windows 版云台是方向键（没有鼠标控云台）、开火只有 `F`、
+  没接 27RM 自瞄、没有 pitch 软限位保护；但它多一个「枪口方向驾驶」（`T`/`Y`）。
+  逐项对照见 [`win/README.md`](win/README.md#与-linux-版的差距重要)。
 - Windows 下没有 X11，窗口/键鼠用 Win32 API，视频解码用 `stb_image`。
 
 ## 运行
 
-两种连法，**只差 `--host`**：有线（网线直连 `192.168.2.2`）/ 无线（Jetson 热点 `10.42.0.1`）。
+两种连法，**只差 `--host`**：
 
-### 有线运行（笔记本 ↔ Jetson 网线直连）
+| 链路 | Jetson 地址 | 图传可用？ |
+|---|---|---|
+| **无线（比赛用）** | Jetson 自己开的 AP：`MECAR-CTRL` → **10.42.0.1** | ✅ **图传只在这条链路上** |
+| 有线（调试用） | `192.168.2.2`（网线直连，静态） | ❌ Jetson 侧 8080 只绑 wlan0，有线会 `connection refused` |
 
-笔记本 `enp8s0 192.168.2.1` ↔ Jetson `eth0 192.168.2.2`，两边都是静态地址，开机即用。
+### 无线运行（比赛：连 Jetson 的 AP，推荐）
 
-```bash
-./build/gimbal_ctl --host 192.168.2.2                      # 控制 + 视频（默认）
-./build/gimbal_ctl --host 192.168.2.2 --gimbal-rate 150    # 方向键云台更快（默认 120°/s）
-./build/gimbal_ctl --host 192.168.2.2 --no-video           # 只要控制，不要视频
-./build/gimbal_ctl --selftest --host 192.168.2.2           # 只验 UDP 链路（不开窗口）
-```
-
-### 无线运行（笔记本 ↔ Jetson 热点）
-
-**Jetson 侧**先起热点 —— `car-ap` 是 `autoconnect=no`，每次开机要手动拉：
+**Jetson 侧**（开热点，`car-ap` 已设为开机自启）：
 
 ```bash
-sudo nmcli con up car-ap        # SSID MECAR-CTRL / 密码 mecar12345 / 10.42.0.1/24
+sudo nmcli con up car-ap          # SSID MECAR-CTRL / 密码 mecar12345 / 10.42.0.1/24
+ip -br addr show wlan0            # 确认是 10.42.0.1
 ```
 
 **笔记本侧**：
 
 ```bash
 sudo nmcli device wifi connect MECAR-CTRL password mecar12345
-ip -br addr show wlp14s0        # 应拿到 10.42.0.x
+sudo iw dev wlp14s0 set power_save off        # ⚠️ 必须：不关的话 RTT 会抖到 100 ms
+iw dev wlp14s0 get power_save                 # 必须是 off
+ip -br addr show wlp14s0                      # 拿到 10.42.0.x
 
-# Meta(Clash) 会把这个网段塞进隧道，先查：
-ip route get 10.42.0.1          # 必须是 dev wlp14s0；若是 dev Meta 就加绕行规则
-sudo ip rule add to 10.42.0.0/24 lookup main priority 8000
+ip route get 10.42.0.1                        # 显示 dev Meta 就是被 Clash 劫持了
+sudo ip rule add to 10.42.0.0/24 lookup main priority 8000   # 网段按实际改
 
 ./build/gimbal_ctl --host 10.42.0.1
-./build/gimbal_ctl --host 10.42.0.1 --no-video    # 无线带宽紧张时先关视频
 ```
 
-- 车要走位时用无线；**开热点时 Jetson 自己就连不了别的 WiFi**（网卡只能干一件事），有线链路不受影响；
-- **笔记本 Wi-Fi 省电必须关**，否则 ping 的 RTT 会到 333~488 ms、抖动很大（控车是 100 Hz UDP）：
-  `nmcli con mod <MECAR-CTRL 配置名> 802-11-wireless.powersave 2`
-  （这个 NetworkManager 版本 `0=default` **不会**关省电，`2` 才是 disable）；
-- 图传 640x480@30 约 2 Mbps，热点够用；1280x720@30 约 8~15 Mbps 会吃紧。
+- **图传只走 AP**：Jetson 侧 `27RM --stream-bind wlan0` 让 8080 只绑在 wlan0（=10.42.0.1）；
+- 自瞄广播用 `--aim-udp auto`，按 wlan0 的地址+掩码自动算 = **10.42.0.255**；
+- 单客户端实测 30 fps / **1.6 Mbps**（800×600 编码缩放到 600×450、q60）；
+- **别同时开两个看画面的客户端**（浏览器开 `:8080/stream` 也算一个），会把 2.4G 抢崩。
 
-> `ip rule` 是临时的，每次重连 WiFi / 重启 VPN 后都要重新加；切回校园网时删掉它：
-> `sudo ip rule del to 10.42.0.0/24 lookup main priority 8000`
+### 有线运行（调试用）
 
-## 云台控制（方向键）
+笔记本 `enp8s0 192.168.2.1` ↔ Jetson `eth0 192.168.2.2`，两边静态地址，开机即用。
+**控制 ✅ / 图传 ❌**（8080 只绑 wlan0）。
 
-```
-按住 ←/→ = yaw 左/右   ↑/↓ = pitch 抬头/低头
-       速率 --gimbal-rate（默认 120 °/s）
-              ↓ 一阶低通（--tau，默认 45ms）
-           实际发给 Jetson 的角速度
+```bash
+./build/gimbal_ctl --host 192.168.2.2 --no-video     # 有线只用来调控制链路
+./build/gimbal_ctl --selftest --host 192.168.2.2     # 只验 UDP 链路（不开窗口）
 ```
 
-- **按住方向键 → 云台按固定角速度转；松开 → 平滑停住**
-- `--gimbal-rate 120`：方向键速率，调大更"能打"，调小更"稳"
-- `--max-rate 180`：角速度上限
-- `--tau 0.045`：平滑时间常数
-- 鼠标不再参与云台控制（指针不再被锁定，可以正常点窗口）
+## 云台控制（鼠标为主，方向键备用）
+
+```
+移动鼠标 ──位移/时间 × --sens(0.15)──► yaw/pitch 角速度 ─┐
+                                                          ├─► 相加 → 限幅 → 一阶低通 --tau → 发给 Jetson
+按住 ←/→/↑/↓ ── --gimbal-rate(120°/s) 且 pitch ×0.5 ────┘
+```
+
+- **鼠标**：右移右转、左移左转、下移低头、上移抬头；指针每拍被拉回窗口中心（隐形光标），
+  所以可以一直朝一个方向甩，不会顶到屏幕边缘。
+- **灵敏度** `--sens 0.15 °/s per px/s`：鼠标 800 px/s ≈ 云台 120°/s。
+- **方向键** `--gimbal-rate 120`：与鼠标**相加**后限幅到 `--max-rate 180`。
+- **`m` 键**：临时关掉鼠标控制，把指针还给系统（去点别的窗口不用退程序）。
+- **失焦即停**：窗口没有输入焦点时，鼠标和左键**都不响应**（安全设计）。
+
+### pitch 半速 + 软限位保护
+
+- `--pitch-scale 0.5`：pitch 灵敏度是 yaw 的一半（鼠标和方向键都乘）。
+- `--pitch-limit <a> <b>`（默认 `-20 20`）：**必须与 gimbal 的 `--pitch-limit` 对齐**。
+- `--pitch-margin <deg>`（默认 5）：还差这么多度就开始 `guard = (限位 − 当前角) / margin` 线性降速。
+- `--pitch-max-rate <dps>`（默认 120）：pitch 指令上限，对齐 gimbal `--pitch-rate`。
+
+为什么不是直接顶到限位：gimbal 侧 `axis.cpp` 的 `clampToLimits()` 到边界是**把速率硬夹到 0**（急停），
+对电机和机构都不友好。客户端提前减速，实测角度会沿 `1.5°→19°/s、17.6°→8.2、19.4°→1.6、19.9°→0.03` 平滑贴住。
+
+⚠️ **遥测断流时这层保护不生效**（拿不到当前角），此时只剩 gimbal 自己的硬夹。
 
 ## 按键
 
@@ -125,10 +154,11 @@ sudo ip rule add to 10.42.0.0/24 lookup main priority 8000
 |---|---|
 | `←/→` | 云台 yaw 左 / 右（按住转，松开停） |
 | `↑/↓` | 云台 pitch 抬头 / 低头 |
-| **空格** | 停手 / 继续（HOLD 开关，云台 + 底盘 + 发射一起停） |
+| **空格** | **锁死 / 解除**：锁死时云台失能 + 底盘拉低 STBY（`Disable|Hold` + `EStop`），并拒收所有输入 |
 | `g` | 云台使能 / 失能切换 |
 | `j` | 底盘使能 / 失能切换（**底盘急停后按 `j` 恢复**） |
-| **`F`（按住）** | **水弹发射**（按住连发，松开停；HOLD 时不响应） |
+| **鼠标左键**（按住） | **水弹发射**（按住连发，松开停；HOLD 时不响应；需指针在窗口内 + 窗口有焦点） |
+| `F`（按住） | 水弹发射（**备用**，和左键等效） |
 | `x` | **急停**（云台 + 底盘，立即停止 + 失能） |
 | `h` | 云台回中 |
 | `z` | 把当前位置当作 0° |
@@ -139,17 +169,91 @@ sudo ip rule add to 10.42.0.0/24 lookup main priority 8000
 | `Q/E` | 底盘左转 / 右转（满速 `--chassis-turn`，默认 1500 mrad/s；小陀螺模式下让位给自旋） |
 | **Shift** | **按一下切换「快速/普通」档（锁存，不用按住）**，详见下文 |
 | **`R`** | **切换小陀螺模式**（底盘自旋 + 云台反向站住），详见下文 |
+| **`C`** | **切敌方颜色 蓝↔红**（发给 27RM 命令口 40003） |
+| **`N`** | 底盘里程计清零（**原 `c`，已被颜色切换占用**） |
+| **`U`** | **切 27RM 的 单板锁定 / 反小陀螺**（同上，走 40003） |
+| **`t`** | **自瞄辅助开关**（开=按 27RM 的 aim 角把云台怼过去；关=只显示数据） |
+| **`m`** | **鼠标控制开关**（关掉把指针还给系统） |
 | `v` | 视频开关 |
 | `Esc` | 退出（退出前会自动发一帧停止指令） |
 
 > 底盘坐标约定：`vx` 前进 / `vy` 左移 / `wz` 逆时针为正。
 
-## 关于鼠标
+## 参数速查（本轮新增 / 语义变更）
 
-云台已改为方向键控制后，**鼠标不再参与控制、指针也不再被锁定**——
-`--mode grab|warp` 参数保留但不再起作用（向后兼容旧命令行）。
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `--sens <f>` | **0.15** | 鼠标灵敏度 °/s per px/s（原 0.09 废弃、0.30 已砍半） |
+| `--mouse-window <s>` | 0.03 | 估鼠标速度的滑窗，越小越跟手、越抖 |
+| `--mode <relative\|off>` | relative | `off` = 只用方向键（旧的 grab/warp/auto 一律按 relative） |
+| `--pitch-scale <f>` | 0.5 | pitch 灵敏度倍率 |
+| `--pitch-limit <a> <b>` | -20 20 | pitch 软限位，**与 gimbal 对齐** |
+| `--pitch-margin <deg>` | 5 | 距限位多少度开始减速 |
+| `--pitch-max-rate <dps>` | 120 | pitch 指令上限 |
+| `--reticle-size <px>` / `--no-reticle` | 18 | 准星臂长 / 关掉准星 |
+| `--aim-port <n>` / `--aim-off` | 40002 | 自瞄广播端口 / 不接自瞄 |
+| `--aim-assist` | 关 | 启动即开自瞄辅助（等价进去按 `t`） |
+| `--aim-kp <f>` | 4.0 | 辅助增益 °/s per °，同时设两轴 |
+| `--aim-kp-yaw` / `--aim-kp-pitch` | — | 分轴增益，**填负值 = 该轴方向反** |
+| `--aim-deadband <deg>` | 0.3 | 自瞄死区 |
+| `--aim-stale <s>` | 0.25 | 超过这么久没新包就不信任 |
+| `--no-send` | — | **只收不发**（观战）：27RM 用 `--gimbal-aim` 控云台时用，避免抢指令 |
+| `--start-locked` | — | 启动即锁死（云台+底盘失能），按空格解除 |
+| `--27rm-cmd-port <n>` | 40003 | 给 27RM 发命令的口（`C`/`U` 键） |
+| `--mouse-debug` | — | 打印鼠标原始采样 + `FIRE ev/mask/ptr_in/focused` 判定 |
+| `--mouse-ignore-focus` | — | 鼠标只要求指针在窗口内，不看焦点（部分 WM 拿不到焦点时用） |
+| `--raw-motion` | 关 | 用 XInput2 原始位移；**XWayland 下会被自己 warp 的位移污染，别开** |
 
-按 `Esc` 退出（退出前会自动发一帧停止指令）。
+## 鼠标控制细节（踩过的坑，改之前先看）
+
+1. **用指针位置差分，不用事件**：每拍读一次指针位置、和窗口中心做差，再把指针拉回中心。
+   实测 `XWarpPointer` 对**还没 viewable 的窗口是空操作**，所以"首拍只同步不计速度"是必须的。
+2. **Mutter 会把 X11 的 warp 当运动做指针加速**，warp 到中心实际会落在"中心 −104,−71"附近，
+   直接当成位移会瞬间灌出 **114°/s** 的假指令。所以有：跳变门限（>20% 窗口宽高直接丢）+ 启动/切焦点静默期。
+3. **XWayland 会把 warp 也报成 `XI_RawMotion`**，所以 `--raw-motion` 反而更差，默认走位置差分。
+4. **焦点门**：只有「窗口有焦点 且 指针在窗口内」才接管；否则你一点别的窗口它就把指针拽回来，
+   整个桌面没法用。
+5. 让窗口真拿到焦点要用 `_NET_ACTIVE_WINDOW`（`XSetInputFocus` 会被 Mutter 抢回去）——调测试脚本时会遇到。
+
+## 自瞄对接（27RM · UDP 40002，48 B @ 50 Hz）
+
+数据来自 **`~/stmproject/27RM_AUTO_AIM`**（不是底盘工程）。报文结构体**复用**它的
+`inc/aim_udp.hpp`（`-DAIM_ROOT=<路径>`，缺头文件时自瞄功能被编译掉，不影响其它功能）。
+
+| 字段 | 说明 |
+|---|---|
+| `magic` | `0x524D3732`（"27RM"） |
+| `aim_yaw_deg` / `aim_pitch_deg` | 预测瞄准角，**相机系，右/上为正** |
+| `dist_m` | 目标板距离 |
+| `spin_rate_dps` | 反小陀螺转速（只显示，不参与控制） |
+| `valid` / `flags` / `plate_slot` | 有无目标 / bit0 反小陀螺跟踪中、bit1 板朝向相机 / 板序号 |
+
+**自瞄辅助**（默认关，`t` 或 `--aim-assist`）：
+
+```
+yaw 指令   += -kp_yaw   × aim_yaw_deg      （右为正 → yaw 减小）
+pitch 指令 += +kp_pitch × aim_pitch_deg    （上为正 → pitch 增大）
+仅当 valid=1 且数据新鲜(< --aim-stale) 且未 HOLD 时生效，叠加在鼠标/方向键之上
+```
+
+实测（假 27RM 广播端）：aim `yaw+3.0 pitch+1.0`、`kp=4` → 正好 `yaw −12.0 / pitch +4.0 °/s`；
+`valid` 翻 0 后 0.5 s 内指令归零；死区 0.3° 内不动；`--aim-kp-pitch -4` 能让 pitch 单独反号。
+
+排障：`aim 无数据` = 27RM 没跑或端口不对；`aim 无可打目标` = 相机前没有装甲板（`valid=0` 是正常的）。
+
+### 27RM 侧给控制端的四点约定（2026-11-08 核对过源码）
+
+| # | 接口 | 说明 |
+|---|---|---|
+| 1 | **图传** `http://<jetson-ip>:8080/stream` | MJPEG 不变，但**画面已经带检测框**（装甲板/灯条/预测环/瞄准文字）：27RM 把叠加层画进 `view` 再按 `--stream-fps` 编码（JPEG q85）。客户端直接显示即可，不用自己画 |
+| 2 | **自瞄数据** UDP 40002 | 48 字节报文不变；另外 **`reserved` 字节现在填当前敌方颜色**（`1=蓝 2=红`），客户端状态栏用它显示 `敌方蓝/红` |
+| 3 | **27RM 自己控云台** | `--gimbal-aim` 让 27RM 直接往 UDP 40001 发速率（默认 `127.0.0.1:40001`、`--gimbal-kp` 默认 20、yaw 180 / pitch 120 上限、死区 0.5°、退出时失能）。**此时客户端必须加 `--no-send`**，否则两边同时发 40001 会抢指令（见下） |
+| 4 | **命令口** UDP 40003 | 一个字节的命令：`'c'` 切蓝↔红、`'r'` 设红、`'b'` 设蓝、`'u'` 切单板/反小陀螺；27RM 回 `'k'` 作回执。客户端已接：`C` = 切蓝红、`U` = 切模式 |
+
+> ⚠️ **为什么必须 `--no-send`**：gimbal 的控制链路只记一个 peer（回遥测用），但**不按 peer 过滤指令** ——
+> 只要有人发，就执行。所以 27RM 用 `--gimbal-aim` 控云台时，客户端若还按 100 Hz 发（哪怕全是 0 速率），
+> 两个源会交错，云台会抖。`--no-send` 就是"只收不发"的观战模式（已实测：假 gimbal 收 0 帧）。
+> 代价：`--no-send` 时**收不到遥测**（gimbal 只回给最后一个发包方 = 27RM），只能看画面 + 自瞄。
 
 ## 视频
 
@@ -162,11 +266,15 @@ sudo ip rule add to 10.42.0.0/24 lookup main priority 8000
 ## 状态显示
 
 ```
-gimbal_ctl -> 192.168.2.2:40001   [keys: arrows]
+gimbal_ctl -> 192.168.2.2:40001   [mouse + arrows]
+mouse  +412,   -38 px/s  sens 0.15  lock on  (m=toggle)
 ** SPIN cmd +2.00  act +1.85 rad/s ** yaw comp -106 deg/s (R)   <- 小陀螺开着才有
 ** FAST ** 600 mm/s  3.0 rad/s (shift toggled)                 <- 快速档才有
+aim 反小陀螺 板2(朝向)  yaw  +3.00 pitch  +1.00  d 3.45m  spin -1800deg/s  50Hz lost 0
+** AIM ASSIST ** yaw  -12.0 pitch   +4.0 deg/s  (t=toggle)      <- 辅助开着才有
 yaw    cmd   +90.0  act   +88.5  out   +1234.56 deg
-pitch  cmd    +0.0  act    +0.0  out     -12.34 deg
+pitch  cmd   +30.0  act   +28.1  out     +12.34 deg  lim -20/+20  guard  63%
+** PITCH LIMIT ** 18.2 deg 内减速（限位 -20/+20，别硬顶）        <- 进减速区才有
 motor  +30.0 /  +0.0 RPM  24.10V  27C  status=0x07
 link 100Hz lost 0  RTT 0.8ms  OK  rx=100Hz
 chassis pos +1000,   +500 mm  yaw  +45.00  cmd  +300,   +0 mm/s
@@ -175,7 +283,7 @@ chassis pos +1000,   +500 mm  yaw  +45.00  cmd  +300,   +0 mm/s
 video 14.2 fps connected
 ```
 
-**status 异常时会直接标出来**：`ESTOP` / `STALL!` / `WATCHDOG!` / `MOTOR LOST!`，
+**status 异常时会直接标出来**：`ESTOP` / `STALL!` / `WATCHDOG!` / `PITCHLIM` / `MOTOR LOST!`，
 以及 `** GIMBAL DISABLED/LOCKED **`（云台被失能/锁死，按 `g` 两下重新授权）
 —— 开着车的时候你不该去数字段。
 
@@ -255,6 +363,13 @@ cc.yaw_dps  = 方向键速率 + comp
 | 电机状态 `0x6B` | bit3 = **堵转保护**触发，电机会拒绝执行速度命令 | `cansend can0 00000100#0E526B`（yaw）/ `...00000200#0E526B`（pitch）清除；客户端重新使能时也会自动清一次 |
 | yaw 转半圈就停、状态 `0x6B` | 线缆被绞紧（没走滑环） | **机械问题**，刷软件没用，得改走线 |
 | 底盘陀螺 `act` 一直 +0.00 | 底盘反馈帧 `gyro_wz` 恒 0（IMU 故障/轴映射不对） | 查底盘 LSM6DSV16X 的 I2C 与零偏，与本工程无关 |
+| 左上角红字 `NOT FOCUSED`、鼠标不动 | 窗口没拿到输入焦点（鼠标和左键都故意不响应） | 用 `_NET_ACTIVE_WINDOW`/点一下窗口；排查时加 `--mouse-debug` |
+| 鼠标在动但云台不转 | `--mouse-debug` 看 `ptr=` 是否在窗口内、`focused=1`；或按过 `m` 关掉了鼠标 | 点窗口 / 再按 `m` 打开 |
+| 按左键不开火 | 看 `--mouse-debug` 的 `FIRE ev/mask/ptr_in/focused`：哪一项是 0 就是哪道门没过 | 指针要在窗口内、窗口要有焦点；HOLD 时空格退出 |
+| `aim 无数据` | 27RM 没跑 / 端口不是 40002 / 走无线时广播地址没改 | `python3 ~/stmproject/27RM_AUTO_AIM/tools/aim_udp_listen.py` 先验 |
+| `aim 无可打目标` | 27RM 在跑但相机前没装甲板（`valid=0`），或灯条候选为 0 | 属正常，放个装甲板进画面 |
+| 自瞄一开就往反方向怼 | `aim_yaw/aim_pitch` 符号与本机约定相反 | `--aim-kp-yaw -4` / `--aim-kp-pitch -4` 单独翻轴 |
+| pitch 到 17° 左右就不听使唤 | 进入软限位减速区（`guard < 100%`），属设计行为 | 确需更大行程：改 gimbal 的 `--pitch-limit`，再同步客户端 `--pitch-limit` |
 
 ### 直接查电机（Jetson 上）
 
@@ -283,3 +398,5 @@ bash ~/turbo_selftest/spin_watch.sh 90
 | 源码（`main.cpp` / `mjpeg_view.cpp`）说明 | [`src/README.md`](src/README.md) |
 | 线协议（上行/下行逐字节格式） | `../gimbal/include/gimbal/link/control_link.hpp` |
 | 云台控制端（Jetson 侧） | `../gimbal` 工程 |
+| Windows 原生版（方向键控云台 + 枪口方向驾驶） | [`win/README.md`](win/README.md) |
+| 自瞄数据来源（报文定义 / 监听脚本） | `../stmproject/27RM_AUTO_AIM`（`inc/aim_udp.hpp`、`tools/aim_udp_listen.py`） |

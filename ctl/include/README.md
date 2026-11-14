@@ -8,6 +8,7 @@
 ```
 include/
 ├── mjpeg_view.hpp    # MjpegView 类声明：MJPEG over HTTP 拉流 + libjpeg 解码 + 最新帧缓存
+├── aim_view.hpp      # AimView 类声明：收 27RM 自瞄 UDP 报文（40002）+ 只读解析
 └── README.md
 ```
 
@@ -34,3 +35,15 @@ include/
 - **限制**：只支持常见 24/32 位 TrueColor 视觉（红=`0xFF0000` 绿=`0xFF00` 蓝=`0xFF`），
   绝大多数 X11/XWayland 桌面都是这个；不匹配时调用方应退化为"只显示状态文字"。
 - **实现**：见 [`../src/README.md`](../src/README.md)（`src/mjpeg_view.cpp`）。
+
+### `aim_view.hpp` —— 自瞄数据接收（只声明）
+
+- **作用**：接收 27RM 自瞄程序（`~/stmproject/27RM_AUTO_AIM`）按 50 Hz 广播的** 48 字节小端报文**
+  （默认 `192.168.2.255:40002`，无线 `10.42.0.255:40002`），供状态栏显示与 `t` 键辅助瞄准使用。
+- **报文结构体不复制**：`#include "aim_udp.hpp"`（27RM 工程 `inc/aim_udp.hpp` 唯一权威来源）；
+  找不到时 `CTL_HAVE_AIM_LINK=0`，`AimView` 退化为"永远没数据"，编译照常通过。
+- **字段**（`aim_udp.hpp`）：`magic=0x524D3732` / `seq` / `aim_yaw_deg` / `aim_pitch_deg` / `dist_m` /
+  `spin_rate_dps` / `center_mm[3]` / `radius_mm` / `valid` / `flags`（bit0 反小陀螺跟踪、bit1 板朝相机）/ `plate_slot`。
+- **`ctl::AimState`**（只读视图）：对齐上述字段，`age_s` 表示该帧新鲜度（`--aim-stale` 判定用）。
+- **公共接口**：`start(port)` / `stop()` / `get()` / `ageS()` / `fps()` / `lost()`；线程只读快照，不阻塞主循环。
+- **实现**：见 [`../src/README.md`](../src/README.md)（`src/aim_view.cpp`）。
