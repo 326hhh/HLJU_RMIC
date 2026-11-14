@@ -15,8 +15,19 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(JPEG REQUIRED libjpeg)
 
 # 复用 gimbal 工程的线协议定义 —— 只有一个源头，绝不能复制一份
-set(GIMBAL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../gimbal"
-    CACHE PATH "gimbal 工程根目录（用于复用 control_link.hpp）")
+# 默认按顺序找兄弟目录：../gimbal（旧副本）→ ../HLJU_RMIC_gimbal（独立仓库）→ ../HLJU_RMIC/gimbal（monorepo）
+set(GIMBAL_ROOT "" CACHE PATH "gimbal 工程根目录（用于复用 control_link.hpp）")
+if(NOT GIMBAL_ROOT)
+    foreach(_cand
+            "${CMAKE_CURRENT_SOURCE_DIR}/../gimbal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../HLJU_RMIC_gimbal"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../HLJU_RMIC/gimbal")
+        if(EXISTS "${_cand}/include/gimbal/link/control_link.hpp")
+            set(GIMBAL_ROOT "${_cand}")
+            break()
+        endif()
+    endforeach()
+endif()
 if(NOT EXISTS "${GIMBAL_ROOT}/include/gimbal/link/control_link.hpp")
     message(FATAL_ERROR "找不到 ${GIMBAL_ROOT}/include/gimbal/link/control_link.hpp，"
                         "请用 -DGIMBAL_ROOT=<路径> 指定 gimbal 工程位置")
